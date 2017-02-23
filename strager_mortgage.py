@@ -32,6 +32,12 @@ class Period(object):
         self.start_date = start_date
         self.end_date = end_date
 
+    def __contains__(self, date):
+        return self.start_date <= date and date < self.end_date
+
+    def __repr__(self):
+        return 'Period({}, {})'.format(repr(self.start_date), repr(self.end_date))
+
     @property
     def days(self):
         return (self.end_date - self.start_date).days
@@ -57,13 +63,20 @@ class FixedMonthlyInterestRate(InterestRate):
             raise NotImplementedError()
         return self.__yearly_rate / 12
 
+class TaxEffect(object):
+    CASH_INCOME = 'CASH_INCOME'
+    CASH_WITHHELD = 'CASH_WITHHELD'
+    DEDUCTIBLE = 'DEDUCTIBLE'
+    NONE = 'NONE'
+
 class Timeline(object):
     class Event(object):
-        def __init__(self, date, account, amount, description):
+        def __init__(self, date, account, amount, description, tax_effect=TaxEffect.NONE):
             self.date = date
             self.account = account
             self.amount = amount
             self.description = description
+            self.tax_effect = tax_effect
 
         def __str__(self):
             return '{date}: {account} {amount:16} ({description})'.format(
@@ -81,8 +94,11 @@ class Timeline(object):
     def add_event(self, event):
         self.__events.append(event)
 
+    def add_withheld_cash(self, date, account, amount, description):
+        self.add_event(Timeline.Event(date=date, account=account, amount=-amount, description=description, tax_effect=TaxEffect.CASH_WITHHELD))
+
     def add_income(self, date, account, amount, description):
-        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
+        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description, tax_effect=TaxEffect.CASH_INCOME))
 
     def add_generic_deposit(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
@@ -91,10 +107,13 @@ class Timeline(object):
         self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
 
     def add_interest_deposit(self, date, account, amount, description):
-        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
+        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description, tax_effect=TaxEffect.DEDUCTIBLE))
 
     def add_withdrawl(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=-amount, description=description))
+
+    def iter_events_in_period(self, period):
+        return (event for event in self if event.date in period)
 
 class Account(object):
     def __init__(self, name):
@@ -170,14 +189,8 @@ class OverdraftError(ValueError):
     pass
 
 class Income(Account):
-    class Sums(object):
-        def __init__(self):
-            self.gross_cash = money(0)
-            self.withheld_cash = money(0)
-
     def __init__(self):
         super(Income, self).__init__(name='Income')
-        self.__sums_by_year = collections.defaultdict(lambda: Income.Sums())
         self.__last_update = None
 
     def earn_cash(self, timeline, to_account, date, gross_amount, net_amount, description):
@@ -185,16 +198,14 @@ class Income(Account):
         assert gross_amount == money(gross_amount)
         assert net_amount >= 0
         assert net_amount == money(net_amount)
+        assert gross_amount >= net_amount
         assert self.__last_update is None or date >= self.__last_update
-        timeline.add_income(date=date, account=self, amount=gross_amount, description=description)
+        timeline.add_income(date=date, account=self, amount=gross_amount, description='{} (net)'.format(description))
+        withheld_amount = gross_amount - net_amount
+        if withheld_amount > 0:
+            timeline.add_withheld_cash(date=date, account=self, amount=withheld_amount, description='{} (withholding)'.format(description))
         to_account.deposit(timeline=timeline, date=date, amount=net_amount, description=description)
-        sums = self.__sums_by_year[date.year]
-        sums.gross_cash += gross_amount
-        sums.withheld_cash = gross_amount - net_amount
         self.__last_update = date
-
-    def sums_in_year(self, year):
-        return self.__sums_by_year[year]
 
 def transfer(timeline, date, from_account, to_account, amount, description):
     from_account.withdraw(timeline=timeline, date=date, amount=amount, description=description)
@@ -238,11 +249,14 @@ def ca_tax_rate(year, amount):
         return Decimal('0.123')
     return Decimal('0.133')
 
-def tax_due(income, year):
-    sums = income.sums_in_year(year)
-    tax_rate = us_tax_rate(year=year, amount=sums.gross_cash) + ca_tax_rate(year=year, amount=sums.gross_cash)
-    total_due = money(sums.gross_cash * tax_rate)
-    net_due = total_due - sums.withheld_cash
+def tax_due(events, year):
+    gross_cash_income = sum(event.amount for event in events if event.tax_effect == TaxEffect.CASH_INCOME)
+    withheld_cash = sum(-event.amount for event in events if event.tax_effect == TaxEffect.CASH_WITHHELD)
+    deductible = sum(event.amount for event in events if event.tax_effect == TaxEffect.DEDUCTIBLE)
+    tax_rate = us_tax_rate(year=year, amount=gross_cash_income) + ca_tax_rate(year=year, amount=gross_cash_income)
+    taxable_income = max((gross_cash_income - deductible, money(0)))
+    total_due = money(taxable_income * tax_rate)
+    net_due = total_due - withheld_cash
     return net_due
 
 def iter_merge_sort(iterables, key):
@@ -286,10 +300,11 @@ def main():
     tax_payment_funcs = []
     def tax_payment_func(date):
         tax_year = date.year - 1
-        due = tax_due(income=income, year=tax_year)
+        tax_period = Period(datetime.date(year=tax_year, month=1, day=1), datetime.date(year=tax_year + 1, month=1, day=1))
+        due = tax_due(events=[event for event in timeline if event.date in tax_period and event.tax_effect != TaxEffect.NONE], year=tax_year)
         if due < 0:
             raise NotImplementedError()
-        elif due > 0:
+        else:
             checking.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
     tax_payment_funcs = ((datetime.date(year=year, month=4, day=1), tax_payment_func) for year in xrange(begin_date.year, end_date.year + 1))
 
