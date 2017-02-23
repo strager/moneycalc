@@ -79,6 +79,9 @@ class Timeline(object):
     def add_event(self, event):
         self.__events.append(event)
 
+    def add_income(self, date, account, amount, description):
+        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
+
     def add_generic_deposit(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
 
@@ -161,6 +164,22 @@ class CheckingAccount(Account):
         self.__balance = money(self.__balance - amount)
         self.__last_update = date
 
+class OverdraftError(ValueError):
+    pass
+
+class Income(Account):
+    def __init__(self):
+        super(Income, self).__init__(name='Income')
+        self.__last_update = None
+
+    def earn(self, timeline, to_account, date, amount, description):
+        assert amount >= 0
+        assert amount == money(amount)
+        assert self.__last_update is None or date >= self.__last_update
+        timeline.add_income(date=date, account=self, amount=amount, description=description)
+        to_account.deposit(timeline=timeline, date=date, amount=amount, description=description)
+        self.__last_update = date
+
 def transfer(timeline, date, from_account, to_account, amount, description):
     from_account.withdraw(timeline=timeline, date=date, amount=amount, description=description)
     to_account.deposit(timeline=timeline, date=date, amount=amount, description=description)
@@ -173,9 +192,10 @@ def main():
         interest_rate=FixedMonthlyInterestRate(yearly_rate=Decimal('0.04125')),
         term=Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)))
     checking = CheckingAccount(name='Checking')
-    checking.deposit(timeline=timeline, date=datetime.date(2017, 1, 1), amount=money('9999999.99'), description='Life')
+    income = Income()
 
     now = datetime.date(2017, 1, 1)
+    income.earn(timeline=timeline, to_account=checking, date=now, amount=money('9999999.99'), description='Life')
     while loan.balance > 0:
         payment = money('4725.33')
         minimum_deposit = loan.minimum_deposit(date=now)
