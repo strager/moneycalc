@@ -16,7 +16,22 @@ def main():
         name='Mortgage',
         amount=money('975000.00'),
         interest_rate=moneycalc.account.FixedMonthlyInterestRate(yearly_rate=Decimal('0.04125')),
-        term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)))
+        term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)),
+    )
+    loan = moneycalc.account.AmortizedMonthlyLoan(
+        name='Mortgage',
+        amount=money('975000.00'),
+        interest_rate=moneycalc.account.AdjustableRateMortgageInterestRate(
+            fixed_period=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2024, 1, 1)),
+            fixed_yearly_rate=Decimal('0.03125'),
+            variable_yearly_rate_func=moneycalc.account.yearly_stepping_rate_func(
+                start_yearly_rate=Decimal('0.04'),
+                start_year=2024,
+                yearly_increase=Decimal('0.01'),
+            ),
+        ),
+        term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)),
+    )
     checking = moneycalc.account.CheckingAccount(name='Checking')
     income = moneycalc.account.Income()
 

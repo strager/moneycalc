@@ -24,6 +24,37 @@ class FixedMonthlyInterestRate(InterestRate):
             raise NotImplementedError()
         return self.__yearly_rate / 12
 
+class YearlyVariableMonthlyInterestRate(InterestRate):
+    def __init__(self, yearly_rate_func):
+        self.__yearly_rate_func = yearly_rate_func
+
+    def period_interest_rate(self, period):
+        if not period.is_month:
+            raise NotImplementedError()
+        return self.__yearly_rate_func(period.start_date.year) / 12
+
+def yearly_stepping_rate_func(start_yearly_rate, start_year, yearly_increase):
+    def func(year):
+        years_since_start = year - start_year
+        return start_yearly_rate + yearly_increase * years_since_start
+    return func
+
+class AdjustableRateMortgageInterestRate(InterestRate):
+    def __init__(self, fixed_period, fixed_yearly_rate, variable_yearly_rate_func):
+        self.__fixed_period = fixed_period
+        self.__fixed_interest_rate = FixedMonthlyInterestRate(fixed_yearly_rate)
+        self.__variable_interest_rate = YearlyVariableMonthlyInterestRate(variable_yearly_rate_func)
+
+    def period_interest_rate(self, period):
+        if period.intersects(self.__fixed_period):
+            if period not in self.__fixed_period:
+                raise NotImplementedError()
+            return self.__fixed_interest_rate.period_interest_rate(period)
+        if period.start_date < self.__fixed_period.start_date:
+            raise KeyError('Interest for period not defined')
+        assert period.start_date >= self.__fixed_period.end_date
+        return self.__variable_interest_rate.period_interest_rate(period)
+
 class Account(object):
     def __init__(self, name):
         self.__name = name
@@ -44,13 +75,14 @@ class AmortizedMonthlyLoan(Account):
     def minimum_deposit(self, date):
         if date > self.__maturity_date:
             raise NotImplementedError()
+        current_period = Period(date, add_month(date))
+        interest = self.interest_rate.period_interest(current_period, self.balance)
         if date == self.__maturity_date:
-            current_period = Period(date, add_month(date))
-            interest = self.interest_rate.period_interest(current_period, self.balance)
-            return money(interest + self.balance)
+            minimum_principal = self.balance
         else:
             # TODO(strager): Amortization.
-            return 0
+            minimum_principal = money(0)
+        return money(interest + minimum_principal)
 
     def deposit(self, timeline, date, amount, description):
         assert amount >= 0
