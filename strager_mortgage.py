@@ -79,6 +79,9 @@ class Timeline(object):
     def add_event(self, event):
         self.__events.append(event)
 
+    def add_generic_deposit(self, date, account, amount, description):
+        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
+
     def add_principal_deposit(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))
 
@@ -88,18 +91,22 @@ class Timeline(object):
     def add_withdrawl(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=-amount, description=description))
 
-class AmortizedMonthlyLoan(object):
+class Account(object):
+    def __init__(self, name):
+        self.__name = name
+
+    def __str__(self):
+        return self.__name
+
+class AmortizedMonthlyLoan(Account):
     def __init__(self, name, amount, interest_rate, term):
+        super(AmortizedMonthlyLoan, self).__init__(name=name)
         assert amount == money(amount)
-        self.name = name
         self.balance = amount
         self.interest_rate = interest_rate
         self.term = term
         self.__next_payment_due = term.start_date
         self.__maturity_date = sub_month(self.term.end_date)
-
-    def __str__(self):
-        return self.name
 
     def minimum_deposit(self, date):
         if date > self.__maturity_date:
@@ -112,7 +119,7 @@ class AmortizedMonthlyLoan(object):
             # TODO(strager): Amortization.
             return 0
 
-    def deposit(self, timeline, date, amount):
+    def deposit(self, timeline, date, amount, description):
         assert amount >= 0
         assert amount == money(amount)
         if date != self.__next_payment_due:
@@ -125,10 +132,38 @@ class AmortizedMonthlyLoan(object):
         principal = money(amount - interest)
         if principal > self.balance:
             raise NotImplementedError()
-        timeline.add_interest_deposit(date=date, account=self, amount=interest, description='Interest payment')
-        timeline.add_principal_deposit(date=date, account=self, amount=principal, description='Principal payment')
+        timeline.add_interest_deposit(date=date, account=self, amount=interest, description='{} (interest)'.format(description))
+        timeline.add_principal_deposit(date=date, account=self, amount=principal, description='{} (principal)'.format(description))
         self.balance = money(self.balance - principal)
         self.__next_payment_due = current_period.end_date
+
+class CheckingAccount(Account):
+    def __init__(self, name):
+        super(CheckingAccount, self).__init__(name=name)
+        self.__balance = money(0)
+        self.__last_update = None
+
+    def deposit(self, timeline, date, amount, description):
+        assert amount >= 0
+        assert amount == money(amount)
+        assert self.__last_update is None or date >= self.__last_update
+        timeline.add_generic_deposit(date=date, account=self, amount=amount, description=description)
+        self.__balance = money(self.__balance + amount)
+        self.__last_update = date
+
+    def withdraw(self, timeline, date, amount, description):
+        assert amount >= 0
+        assert amount == money(amount)
+        assert self.__last_update is None or date >= self.__last_update
+        if amount > self.__balance:
+            raise NotImplementedError()
+        timeline.add_withdrawl(date=date, account=self, amount=amount, description=description)
+        self.__balance = money(self.__balance - amount)
+        self.__last_update = date
+
+def transfer(timeline, date, from_account, to_account, amount, description):
+    from_account.withdraw(timeline=timeline, date=date, amount=amount, description=description)
+    to_account.deposit(timeline=timeline, date=date, amount=amount, description=description)
 
 def main():
     timeline = Timeline()
@@ -137,6 +172,8 @@ def main():
         amount=money('975000.00'),
         interest_rate=FixedMonthlyInterestRate(yearly_rate=Decimal('0.04125')),
         term=Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)))
+    checking = CheckingAccount(name='Checking')
+    checking.deposit(timeline=timeline, date=datetime.date(2017, 1, 1), amount=money('9999999.99'), description='Life')
 
     now = datetime.date(2017, 1, 1)
     while loan.balance > 0:
@@ -144,7 +181,7 @@ def main():
         minimum_deposit = loan.minimum_deposit(date=now)
         if payment < minimum_deposit:
             payment = minimum_deposit
-        loan.deposit(timeline=timeline, date=now, amount=payment)
+        transfer(timeline=timeline, date=now, from_account=checking, to_account=loan, amount=payment, description='Mortgage payment')
         now = add_month(now)
 
     sys.stdout.write('Timeline:\n\n')
