@@ -8,6 +8,7 @@ import decimal
 import sys
 
 money_context = decimal.BasicContext.copy()
+money_context.prec = 20
 money_context.rounding = decimal.ROUND_HALF_UP # FIXME(strager)
 
 def money(amount):
@@ -244,6 +245,19 @@ def tax_due(income, year):
     net_due = total_due - sums.withheld_cash
     return net_due
 
+def iter_merge_sort(iterables, key):
+    iterators = list(map(iter, iterables))
+    cur_values = list(map(lambda iterator: next(iterator, None), iterators))
+    active_indexes = set(index for (index, value) in enumerate(cur_values) if value is not None)
+    while active_indexes:
+        index = min(active_indexes, key=lambda index: key(cur_values[index]))
+        assert cur_values[index] is not None
+        yield cur_values[index]
+        new_value = next(iterators[index], None)
+        cur_values[index] = new_value
+        if new_value is None:
+            active_indexes.remove(index)
+
 def main():
     timeline = Timeline()
     loan = AmortizedMonthlyLoan(
@@ -254,24 +268,37 @@ def main():
     checking = CheckingAccount(name='Checking')
     income = Income()
 
-    now = datetime.date(2017, 1, 1)
-    income.earn_cash(timeline=timeline, to_account=checking, date=now, gross_amount=money('9999999.99'), net_amount=money('9999999.99'), description='Life')
-    years_taxes_paid = set()
-    while loan.balance > 0:
-        if now.month >= 4 and now.year not in years_taxes_paid:
-            tax_year = now.year - 1
-            due = tax_due(income=income, year=tax_year)
-            if due < 0:
-                raise NotImplementedError()
-            elif due > 0:
-                checking.withdraw(timeline=timeline, date=now, amount=due, description='Taxes')
-            years_taxes_paid.add(now.year)
+    begin_date = datetime.date(year=2016, month=1, day=1)
+    end_date = datetime.date(year=2060, month=1, day=1)
+
+    mortgage_payment_funcs = []
+    def mortgage_payment_func(date):
         payment = money('4725.33')
-        minimum_deposit = loan.minimum_deposit(date=now)
+        minimum_deposit = loan.minimum_deposit(date=date)
         if payment < minimum_deposit:
             payment = minimum_deposit
-        transfer(timeline=timeline, date=now, from_account=checking, to_account=loan, amount=payment, description='Mortgage payment')
+        transfer(timeline=timeline, date=date, from_account=checking, to_account=loan, amount=payment, description='Mortgage payment')
+    now = loan.term.start_date
+    while now < loan.term.end_date:
+        mortgage_payment_funcs.append((now, mortgage_payment_func))
         now = add_month(now)
+
+    tax_payment_funcs = []
+    def tax_payment_func(date):
+        tax_year = date.year - 1
+        due = tax_due(income=income, year=tax_year)
+        if due < 0:
+            raise NotImplementedError()
+        elif due > 0:
+            checking.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
+    tax_payment_funcs = ((datetime.date(year=year, month=4, day=1), tax_payment_func) for year in xrange(begin_date.year, end_date.year + 1))
+
+    def income_func(date):
+        income.earn_cash(timeline=timeline, to_account=checking, date=date, gross_amount=money('999999.99'), net_amount=money('999999.99'), description='Life')
+    income_funcs = ((datetime.date(year=year, month=1, day=1), income_func) for year in xrange(begin_date.year, end_date.year + 1))
+
+    for (date, func) in iter_merge_sort([mortgage_payment_funcs, tax_payment_funcs, income_funcs], key=lambda (date, func): date):
+        func(date)
 
     sys.stdout.write('Timeline:\n\n')
     for event in timeline:
