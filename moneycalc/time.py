@@ -13,6 +13,17 @@ def sub_month(date):
     else:
         return datetime.date(year=date.year, month=date.month - 1, day=date.day)
 
+def diff_months(x, y):
+    if x < y:
+        raise NotImplementedError()
+    months = 0
+    while x > y:
+        x = sub_month(x)
+        months += 1
+    if x != y:
+        raise NotImplementedError()
+    return months
+
 class Period(object):
     def __init__(self, start_date, end_date):
         assert start_date <= end_date

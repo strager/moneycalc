@@ -40,10 +40,7 @@ def main():
 
     mortgage_payment_funcs = []
     def mortgage_payment_func(date):
-        payment = money('4725.33')
-        minimum_deposit = loan.minimum_deposit(date=date)
-        if payment < minimum_deposit:
-            payment = minimum_deposit
+        payment = loan.minimum_deposit(date=date)
         moneycalc.account.transfer(timeline=timeline, date=date, from_account=checking, to_account=loan, amount=payment, description='Mortgage payment')
     now = loan.term.start_date
     while now < loan.term.end_date:

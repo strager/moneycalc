@@ -1,8 +1,11 @@
+from decimal import Decimal
 from moneycalc.money import money
 from moneycalc.time import Period
 from moneycalc.time import add_month
 from moneycalc.time import sub_month
 import abc
+import math
+import moneycalc.time
 
 class OverdraftError(ValueError):
     pass
@@ -11,9 +14,6 @@ class InterestRate(object):
     @abc.abstractmethod
     def period_interest_rate(self, period):
         raise NotImplementedError()
-
-    def period_interest(self, period, amount):
-        return money(self.period_interest_rate(period) * amount)
 
 class FixedMonthlyInterestRate(InterestRate):
     def __init__(self, yearly_rate):
@@ -75,14 +75,17 @@ class AmortizedMonthlyLoan(Account):
     def minimum_deposit(self, date):
         if date > self.__maturity_date:
             raise NotImplementedError()
+        if date != self.__next_payment_due:
+            raise NotImplementedError()
         current_period = Period(date, add_month(date))
-        interest = self.interest_rate.period_interest(current_period, self.balance)
+        interest_rate = self.interest_rate.period_interest_rate(current_period)
         if date == self.__maturity_date:
-            minimum_principal = self.balance
+            interest = money(interest_rate * self.balance)
+            return money(interest + self.balance)
         else:
-            # TODO(strager): Amortization.
-            minimum_principal = money(0)
-        return money(interest + minimum_principal)
+            months_remaining = moneycalc.time.diff_months(self.term.end_date, current_period.start_date)
+            tmp = Decimal(math.pow(Decimal(1) + interest_rate, months_remaining))
+            return money(self.balance * (interest_rate * tmp) / (tmp - Decimal(1)))
 
     def deposit(self, timeline, date, amount, description):
         assert amount >= 0
@@ -90,14 +93,15 @@ class AmortizedMonthlyLoan(Account):
         if date != self.__next_payment_due:
             raise NotImplementedError()
         current_period = Period(date, add_month(date))
-        interest = self.interest_rate.period_interest(current_period, self.balance)
+        interest_rate = self.interest_rate.period_interest_rate(current_period)
+        interest = money(interest_rate * self.balance)
         if amount < interest:
             raise NotImplementedError()
         # TODO(strager): Ensure minimum monthly payment is met.
         principal = money(amount - interest)
         if principal > self.balance:
             raise NotImplementedError()
-        timeline.add_interest_deposit(date=date, account=self, amount=interest, description='{} (interest)'.format(description))
+        timeline.add_interest_deposit(date=date, account=self, amount=interest, description='{} (interest ({:.5}%))'.format(description, interest_rate * Decimal(12) * Decimal(100)))
         timeline.add_principal_deposit(date=date, account=self, amount=principal, description='{} (principal)'.format(description))
         self.balance = money(self.balance - principal)
         self.__next_payment_due = current_period.end_date
