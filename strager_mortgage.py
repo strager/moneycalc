@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 import abc
+import collections
 import datetime
 import decimal
 import sys
@@ -168,21 +169,80 @@ class OverdraftError(ValueError):
     pass
 
 class Income(Account):
+    class Sums(object):
+        def __init__(self):
+            self.gross_cash = money(0)
+            self.withheld_cash = money(0)
+
     def __init__(self):
         super(Income, self).__init__(name='Income')
+        self.__sums_by_year = collections.defaultdict(lambda: Income.Sums())
         self.__last_update = None
 
-    def earn(self, timeline, to_account, date, amount, description):
-        assert amount >= 0
-        assert amount == money(amount)
+    def earn_cash(self, timeline, to_account, date, gross_amount, net_amount, description):
+        assert gross_amount >= 0
+        assert gross_amount == money(gross_amount)
+        assert net_amount >= 0
+        assert net_amount == money(net_amount)
         assert self.__last_update is None or date >= self.__last_update
-        timeline.add_income(date=date, account=self, amount=amount, description=description)
-        to_account.deposit(timeline=timeline, date=date, amount=amount, description=description)
+        timeline.add_income(date=date, account=self, amount=gross_amount, description=description)
+        to_account.deposit(timeline=timeline, date=date, amount=net_amount, description=description)
+        sums = self.__sums_by_year[date.year]
+        sums.gross_cash += gross_amount
+        sums.withheld_cash = gross_amount - net_amount
         self.__last_update = date
+
+    def sums_in_year(self, year):
+        return self.__sums_by_year[year]
 
 def transfer(timeline, date, from_account, to_account, amount, description):
     from_account.withdraw(timeline=timeline, date=date, amount=amount, description=description)
     to_account.deposit(timeline=timeline, date=date, amount=amount, description=description)
+
+def us_tax_rate(year, amount):
+    # TODO(strager): Account for year.
+    if amount < 9276:
+        return Decimal('0.10')
+    if amount < 37651:
+        return Decimal('0.15')
+    if amount < 91151:
+        return Decimal('0.25')
+    if amount < 190151:
+        return Decimal('0.28')
+    if amount < 413351:
+        return Decimal('0.33')
+    if amount < 415051:
+        return Decimal('0.35')
+    return Decimal('0.396')
+
+def ca_tax_rate(year, amount):
+    # TODO(strager): Account for year.
+    if amount < 7749:
+        return Decimal('0.01')
+    if amount < 18371:
+        return Decimal('0.02')
+    if amount < 28995:
+        return Decimal('0.04')
+    if amount < 40250:
+        return Decimal('0.06')
+    if amount < 50689:
+        return Decimal('0.08')
+    if amount < 259844:
+        return Decimal('0.093')
+    if amount < 311812:
+        return Decimal('0.103')
+    if amount < 519867:
+        return Decimal('0.113')
+    if amount < 1000000:
+        return Decimal('0.123')
+    return Decimal('0.133')
+
+def tax_due(income, year):
+    sums = income.sums_in_year(year)
+    tax_rate = us_tax_rate(year=year, amount=sums.gross_cash) + ca_tax_rate(year=year, amount=sums.gross_cash)
+    total_due = money(sums.gross_cash * tax_rate)
+    net_due = total_due - sums.withheld_cash
+    return net_due
 
 def main():
     timeline = Timeline()
@@ -195,8 +255,17 @@ def main():
     income = Income()
 
     now = datetime.date(2017, 1, 1)
-    income.earn(timeline=timeline, to_account=checking, date=now, amount=money('9999999.99'), description='Life')
+    income.earn_cash(timeline=timeline, to_account=checking, date=now, gross_amount=money('9999999.99'), net_amount=money('9999999.99'), description='Life')
+    years_taxes_paid = set()
     while loan.balance > 0:
+        if now.month >= 4 and now.year not in years_taxes_paid:
+            tax_year = now.year - 1
+            due = tax_due(income=income, year=tax_year)
+            if due < 0:
+                raise NotImplementedError()
+            elif due > 0:
+                checking.withdraw(timeline=timeline, date=now, amount=due, description='Taxes')
+            years_taxes_paid.add(now.year)
         payment = money('4725.33')
         minimum_deposit = loan.minimum_deposit(date=now)
         if payment < minimum_deposit:
