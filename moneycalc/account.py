@@ -171,8 +171,8 @@ class LineOfCreditAccount(Account):
                 timeline.add_interest_deposit(date=date, account=self, amount=finance_charge_payment, description='{} (interest)'.format(description))
                 self.__due_finance_charge -= finance_charge_payment
                 principal_amount -= finance_charge_payment
-        timeline.add_generic_deposit(date=date, account=self, amount=amount, description=description)
-        self.__balance = money(self.__balance + amount)
+        timeline.add_generic_deposit(date=date, account=self, amount=principal_amount, description=description)
+        self.__balance = money(self.__balance + principal_amount)
         self.__last_update = date
 
     def withdraw(self, timeline, date, amount, description):
