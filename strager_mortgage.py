@@ -48,7 +48,6 @@ def main():
         draw_term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2027, 1, 1)),
         repayment_term=moneycalc.time.Period(datetime.date(2027, 1, 1), datetime.date(2047, 1, 1)),
     )
-    heloc.withdraw(timeline=timeline, date=datetime.date(2017, 1, 1), amount=money('975000.00'), description='Purchase')
 
     start_date = datetime.date(year=2017, month=1, day=1)
     end_date = datetime.date(year=2027, month=1, day=1)
@@ -67,14 +66,35 @@ def main():
 
     salary_funcs = iter_salary_funcs(timeline=timeline, start_date=start_date, to_account=heloc)
 
-    for (date, func) in moneycalc.util.iter_merge_sort([tax_payment_funcs, salary_funcs], key=lambda (date, func): date):
+    def year_summary(date):
+        assert date.month == 1
+        assert date.day == 1
+        year = date.year - 1
+
+        events = [e for e in timeline if e.date.year == year]
+        heloc_events = [e for e in events if e.account is heloc]
+        sys.stdout.write('Year {}:\n'.format(year))
+        sys.stdout.write('  {account}: {balance} balance ({deposited} deposited, {withdrawn} withdrawn, {interest} interest)\n'.format(
+            account=heloc,
+            balance=heloc.balance,
+            deposited=sum(e.amount for e in heloc_events if e.amount > 0),
+            interest=sum(e.amount for e in heloc_events if 'interest' in e.description), # HACK(strager)
+            withdrawn=sum(e.amount for e in heloc_events if e.amount < 0),
+        ))
+    year_summary_funcs = ((datetime.date(year=year, month=1, day=1), year_summary) for year in xrange(start_date.year, end_date.year + 1))
+
+    home_purchase_date = datetime.date(2017, 1, 1)
+    home_purchase_funcs = [(home_purchase_date, lambda date: heloc.withdraw(timeline=timeline, date=date, amount=money('975000.00'), description='Purchase'))]
+    for (date, func) in moneycalc.util.iter_merge_sort([year_summary_funcs, home_purchase_funcs, tax_payment_funcs, salary_funcs], key=lambda (date, func): date):
         if date > end_date:
             break
         func(date)
 
-    sys.stdout.write('Timeline:\n\n')
-    for event in timeline:
-        sys.stdout.write('{}\n'.format(event))
+    print_timeline = False
+    if print_timeline:
+        sys.stdout.write('Timeline:\n\n')
+        for event in timeline:
+            sys.stdout.write('{}\n'.format(event))
 
 if __name__ == '__main__':
     main()

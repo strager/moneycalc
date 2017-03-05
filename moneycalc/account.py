@@ -200,6 +200,10 @@ class LineOfCreditAccount(Account):
         self.__due_finance_charge = money(0)
         self.__last_update = None
 
+    @property
+    def balance(self):
+        return self.__balance
+
     def deposit(self, timeline, date, amount, description):
         assert amount >= 0
         assert amount == money(amount)
