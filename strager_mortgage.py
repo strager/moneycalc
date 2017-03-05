@@ -38,8 +38,12 @@ def main():
     timeline = moneycalc.timeline.Timeline()
     heloc = moneycalc.account.LineOfCreditAccount(
         name='HELOC',
-        interest_rate=moneycalc.account.FixedDailyInterstRate(
-            yearly_rate=Decimal('0.0425'),
+        interest_rate=moneycalc.account.VariableDailyInterestRate(
+            prime_rate=moneycalc.account.YearlySteppingPrimeRate(
+                start_yearly_rate=Decimal('0.0425'),
+                start_year=2017,
+                yearly_increase=Decimal('0.005'),
+            )
         ),
         draw_term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2027, 1, 1)),
         repayment_term=moneycalc.time.Period(datetime.date(2027, 1, 1), datetime.date(2047, 1, 1)),

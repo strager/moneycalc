@@ -11,6 +11,39 @@ import moneycalc.time
 class OverdraftError(ValueError):
     pass
 
+class PrimeRate(object):
+    @abc.abstractmethod
+    def prime_rate_and_change_date(self, date):
+        '''
+        Returns a tuple of the prime rate at the given date (as
+        a Decimal yearly interest rate) and the next date the
+        prime rate could change.
+        '''
+        raise NotImplementedError()
+
+class YearlySteppingPrimeRate(PrimeRate):
+    def __init__(self, start_yearly_rate, start_year, yearly_increase):
+        self.__start_yearly_rate = start_yearly_rate
+        self.__start_year = start_year
+        self.__yearly_increase = yearly_increase
+
+    def prime_rate_and_change_date(self, date):
+        years_since_start = date.year - self.__start_year
+        if years_since_start < 0:
+            raise NotImplementedError()
+        rate = self.__start_yearly_rate + self.__yearly_increase * years_since_start
+        return (rate, datetime.date(year=date.year + 1, month=1, day=1))
+
+class YearlySampledPrimeRate(PrimeRate):
+    def __init__(self, base_prime_rate, sample_date):
+        self.__base_prime_rate = base_prime_rate
+        self.__sample_month = sample_date.month
+        self.__sample_day = sample_date.day
+
+    def prime_rate_and_change_date(self, date):
+        (prime_rate, _change_date) = self.__base_prime_rate.prime_rate_and_change_date(datetime.date(year=date.year, month=self.__sample_month, day=self.__sample_day))
+        return (prime_rate, datetime.datetime(year=date.year + 1, month=self.__sample_month, day=self.__sample_day))
+
 class InterestRate(object):
     @abc.abstractmethod
     def period_interest_rate(self, period):
@@ -34,26 +67,35 @@ class FixedMonthlyInterestRate(InterestRate):
             raise NotImplementedError()
         return self.__yearly_rate / 12
 
-class YearlyVariableMonthlyInterestRate(InterestRate):
-    def __init__(self, yearly_rate_func):
-        self.__yearly_rate_func = yearly_rate_func
+class VariableDailyInterestRate(InterestRate):
+    def __init__(self, prime_rate):
+        self.__prime_rate = prime_rate
+
+    def period_interest_rate(self, period):
+        if not period.is_day:
+            raise NotImplementedError()
+        (prime_rate, next_prime_rate_change) = self.__prime_rate.prime_rate_and_change_date(period.start_date)
+        if next_prime_rate_change < period.end_date:
+            raise NotImplementedError()
+        return prime_rate / moneycalc.time.days_in_year(period.start_date.year)
+
+class VariableMonthlyInterestRate(InterestRate):
+    def __init__(self, prime_rate):
+        self.__prime_rate = prime_rate
 
     def period_interest_rate(self, period):
         if not period.is_month:
             raise NotImplementedError()
-        return self.__yearly_rate_func(period.start_date.year) / 12
-
-def yearly_stepping_rate_func(start_yearly_rate, start_year, yearly_increase):
-    def func(year):
-        years_since_start = year - start_year
-        return start_yearly_rate + yearly_increase * years_since_start
-    return func
+        (prime_rate, next_prime_rate_change) = self.__prime_rate.prime_rate_and_change_date(period.start_date)
+        if next_prime_rate_change < period.end_date:
+            raise NotImplementedError()
+        return prime_rate / 12
 
 class AdjustableRateMortgageInterestRate(InterestRate):
-    def __init__(self, fixed_period, fixed_yearly_rate, variable_yearly_rate_func):
+    def __init__(self, fixed_period, fixed_yearly_rate, prime_rate):
         self.__fixed_period = fixed_period
         self.__fixed_interest_rate = FixedMonthlyInterestRate(fixed_yearly_rate)
-        self.__variable_interest_rate = YearlyVariableMonthlyInterestRate(variable_yearly_rate_func)
+        self.__variable_interest_rate = VariableMonthlyInterestRate(prime_rate)
 
     def period_interest_rate(self, period):
         if period.intersects(self.__fixed_period):
