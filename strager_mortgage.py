@@ -34,6 +34,42 @@ def iter_salary_funcs(timeline, start_date, to_account):
         yield (now, salary_func)
         now += datetime.timedelta(days=2 * 7)
 
+def iter_tax_payment_funcs(timeline, start_date, account):
+    def tax_payment_func(date):
+        tax_year = date.year - 1
+        tax_period = moneycalc.time.Period(datetime.date(year=tax_year, month=1, day=1), datetime.date(year=tax_year + 1, month=1, day=1))
+        due = moneycalc.tax.tax_due(events=[event for event in timeline if event.date in tax_period and event.tax_effect != moneycalc.tax.TaxEffect.NONE], year=tax_year)
+        if due < 0:
+            # TODO(strager): Treat as income.
+            account.deposit(timeline=timeline, date=date, amount=-due, description='Tax refund')
+        else:
+            account.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
+    year = start_date.year
+    while True:
+        yield (datetime.date(year=year, month=4, day=1), tax_payment_func)
+        year += 1
+
+def iter_year_summary_funcs(timeline, start_date, accounts):
+    def year_summary_func(date):
+        assert date.month == 1
+        assert date.day == 1
+        year = date.year - 1
+        sys.stdout.write('Year {}:\n'.format(year))
+        events = [e for e in timeline if e.date.year == year]
+        for account in accounts:
+            account_events = [e for e in events if e.account is account]
+            sys.stdout.write('  {account}: {balance} balance ({deposited} deposited, {withdrawn} withdrawn, {interest} interest)\n'.format(
+                account=account,
+                balance=account.balance,
+                deposited=sum(e.amount for e in account_events if e.amount > 0),
+                interest=sum(e.amount for e in account_events if 'interest' in e.description), # HACK(strager)
+                withdrawn=sum(e.amount for e in account_events if e.amount < 0),
+            ))
+    year = start_date.year
+    while True:
+        yield (datetime.date(year=year, month=1, day=1), year_summary_func)
+        year += 1
+
 def main():
     timeline = moneycalc.timeline.Timeline()
     heloc = moneycalc.account.LineOfCreditAccount(
@@ -52,36 +88,9 @@ def main():
     start_date = datetime.date(year=2017, month=1, day=1)
     end_date = datetime.date(year=2027, month=1, day=1)
 
-    tax_payment_funcs = []
-    def tax_payment_func(date):
-        tax_year = date.year - 1
-        tax_period = moneycalc.time.Period(datetime.date(year=tax_year, month=1, day=1), datetime.date(year=tax_year + 1, month=1, day=1))
-        due = moneycalc.tax.tax_due(events=[event for event in timeline if event.date in tax_period and event.tax_effect != moneycalc.tax.TaxEffect.NONE], year=tax_year)
-        if due < 0:
-            # TODO(strager): Treat as income.
-            heloc.deposit(timeline=timeline, date=date, amount=-due, description='Tax refund')
-        else:
-            heloc.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
-    tax_payment_funcs = ((datetime.date(year=year, month=4, day=1), tax_payment_func) for year in xrange(start_date.year, end_date.year + 1))
-
+    year_summary_funcs = iter_year_summary_funcs(timeline=timeline, start_date=start_date, accounts=[heloc])
+    tax_payment_funcs = iter_tax_payment_funcs(timeline=timeline, start_date=start_date, account=heloc)
     salary_funcs = iter_salary_funcs(timeline=timeline, start_date=start_date, to_account=heloc)
-
-    def year_summary(date):
-        assert date.month == 1
-        assert date.day == 1
-        year = date.year - 1
-
-        events = [e for e in timeline if e.date.year == year]
-        heloc_events = [e for e in events if e.account is heloc]
-        sys.stdout.write('Year {}:\n'.format(year))
-        sys.stdout.write('  {account}: {balance} balance ({deposited} deposited, {withdrawn} withdrawn, {interest} interest)\n'.format(
-            account=heloc,
-            balance=heloc.balance,
-            deposited=sum(e.amount for e in heloc_events if e.amount > 0),
-            interest=sum(e.amount for e in heloc_events if 'interest' in e.description), # HACK(strager)
-            withdrawn=sum(e.amount for e in heloc_events if e.amount < 0),
-        ))
-    year_summary_funcs = ((datetime.date(year=year, month=1, day=1), year_summary) for year in xrange(start_date.year, end_date.year + 1))
 
     home_purchase_date = datetime.date(2017, 1, 1)
     home_purchase_funcs = [(home_purchase_date, lambda date: heloc.withdraw(timeline=timeline, date=date, amount=money('975000.00'), description='Purchase'))]
