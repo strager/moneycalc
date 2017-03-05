@@ -36,39 +36,18 @@ def iter_salary_funcs(timeline, start_date, to_account):
 
 def main():
     timeline = moneycalc.timeline.Timeline()
-    loan = moneycalc.account.AmortizedMonthlyLoan(
-        name='Mortgage',
-        amount=money('975000.00'),
-        interest_rate=moneycalc.account.FixedMonthlyInterestRate(yearly_rate=Decimal('0.04125')),
-        term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)),
-    )
-    loan = moneycalc.account.AmortizedMonthlyLoan(
-        name='Mortgage',
-        amount=money('975000.00'),
-        interest_rate=moneycalc.account.AdjustableRateMortgageInterestRate(
-            fixed_period=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2024, 1, 1)),
-            fixed_yearly_rate=Decimal('0.03125'),
-            variable_yearly_rate_func=moneycalc.account.yearly_stepping_rate_func(
-                start_yearly_rate=Decimal('0.04'),
-                start_year=2024,
-                yearly_increase=Decimal('0.01'),
-            ),
+    heloc = moneycalc.account.LineOfCreditAccount(
+        name='HELOC',
+        interest_rate=moneycalc.account.FixedDailyInterstRate(
+            yearly_rate=Decimal('0.0425'),
         ),
-        term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2047, 1, 1)),
+        draw_term=moneycalc.time.Period(datetime.date(2017, 1, 1), datetime.date(2027, 1, 1)),
+        repayment_term=moneycalc.time.Period(datetime.date(2027, 1, 1), datetime.date(2047, 1, 1)),
     )
-    checking = moneycalc.account.CheckingAccount(name='Checking')
+    heloc.withdraw(timeline=timeline, date=datetime.date(2017, 1, 1), amount=money('975000.00'), description='Purchase')
 
-    start_date = datetime.date(year=2016, month=1, day=1)
-    end_date = datetime.date(year=2060, month=1, day=1)
-
-    mortgage_payment_funcs = []
-    def mortgage_payment_func(date):
-        payment = loan.minimum_deposit(date=date)
-        moneycalc.account.transfer(timeline=timeline, date=date, from_account=checking, to_account=loan, amount=payment, description='Mortgage payment')
-    now = loan.term.start_date
-    while now < loan.term.end_date:
-        mortgage_payment_funcs.append((now, mortgage_payment_func))
-        now = moneycalc.time.add_month(now)
+    start_date = datetime.date(year=2017, month=1, day=1)
+    end_date = datetime.date(year=2027, month=1, day=1)
 
     tax_payment_funcs = []
     def tax_payment_func(date):
@@ -77,14 +56,14 @@ def main():
         due = moneycalc.tax.tax_due(events=[event for event in timeline if event.date in tax_period and event.tax_effect != moneycalc.tax.TaxEffect.NONE], year=tax_year)
         if due < 0:
             # TODO(strager): Treat as income.
-            checking.deposit(timeline=timeline, date=date, amount=-due, description='Tax refund')
+            heloc.deposit(timeline=timeline, date=date, amount=-due, description='Tax refund')
         else:
-            checking.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
+            heloc.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
     tax_payment_funcs = ((datetime.date(year=year, month=4, day=1), tax_payment_func) for year in xrange(start_date.year, end_date.year + 1))
 
-    salary_funcs = iter_salary_funcs(timeline=timeline, start_date=start_date, to_account=checking)
+    salary_funcs = iter_salary_funcs(timeline=timeline, start_date=start_date, to_account=heloc)
 
-    for (date, func) in moneycalc.util.iter_merge_sort([mortgage_payment_funcs, tax_payment_funcs, salary_funcs], key=lambda (date, func): date):
+    for (date, func) in moneycalc.util.iter_merge_sort([tax_payment_funcs, salary_funcs], key=lambda (date, func): date):
         if date > end_date:
             break
         func(date)

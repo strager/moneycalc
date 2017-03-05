@@ -4,6 +4,7 @@ from moneycalc.time import Period
 from moneycalc.time import add_month
 from moneycalc.time import sub_month
 import abc
+import datetime
 import math
 import moneycalc.time
 
@@ -14,6 +15,15 @@ class InterestRate(object):
     @abc.abstractmethod
     def period_interest_rate(self, period):
         raise NotImplementedError()
+
+class FixedDailyInterstRate(InterestRate):
+    def __init__(self, yearly_rate):
+        self.__yearly_rate = yearly_rate
+
+    def period_interest_rate(self, period):
+        if not period.is_day:
+            raise NotImplementedError()
+        return self.__yearly_rate / moneycalc.time.days_in_year(period.start_date.year)
 
 class FixedMonthlyInterestRate(InterestRate):
     def __init__(self, yearly_rate):
@@ -129,6 +139,84 @@ class CheckingAccount(Account):
         timeline.add_withdrawl(date=date, account=self, amount=amount, description=description)
         self.__balance = money(self.__balance - amount)
         self.__last_update = date
+
+class LineOfCreditAccount(Account):
+    '''
+    A line of credit (e.g. credit card or HELOC) where:
+
+    * Interest payments are due monthly,
+    * Interest accrues daily, and
+    * A draw term comes before an optional repayment-only term.
+    '''
+    def __init__(self, name, interest_rate, draw_term, repayment_term):
+        super(LineOfCreditAccount, self).__init__(name=name)
+        self.__interest_rate = interest_rate
+        self.__draw_term = draw_term
+        self.__repayment_term = repayment_term
+        self.__balance = money(0)
+        self.__period_finance_charge = money(0)
+        self.__due_finance_charge = money(0)
+        self.__last_update = None
+
+    def deposit(self, timeline, date, amount, description):
+        assert amount >= 0
+        assert amount == money(amount)
+        assert self.__last_update is None or date >= self.__last_update
+        self.__update_finance_charge(date)
+        principal_amount = amount
+        if self.__due_finance_charge > money(0):
+            # Pay the finance charge due before paying the principal.
+            finance_charge_payment = min(self.__due_finance_charge, amount)
+            if finance_charge_payment > money(0):
+                timeline.add_interest_deposit(date=date, account=self, amount=finance_charge_payment, description='{} (interest)'.format(description))
+                self.__due_finance_charge -= finance_charge_payment
+                principal_amount -= finance_charge_payment
+        timeline.add_generic_deposit(date=date, account=self, amount=amount, description=description)
+        self.__balance = money(self.__balance + amount)
+        self.__last_update = date
+
+    def withdraw(self, timeline, date, amount, description):
+        assert amount >= 0
+        assert amount == money(amount)
+        assert self.__last_update is None or date >= self.__last_update
+        if date not in self.__draw_term:
+            raise OverdraftError()
+        self.__update_finance_charge(date)
+        timeline.add_withdrawl(date=date, account=self, amount=amount, description=description)
+        self.__balance = money(self.__balance - amount)
+        self.__last_update = date
+
+    def __update_finance_charge(self, date):
+        '''
+        Accrue finance charges for all days before (but not including) the
+        given date.
+
+        Also, mark finance charges as due as necessary.
+        '''
+        if self.__last_update is None:
+            assert self.__balance == money(0)
+            return
+        now = self.__last_update
+        while now < date:
+            if now.day == 1:
+                # TODO(strager): Ensure __due_finance_charge is paid within the payment window.
+                if self.__due_finance_charge != money(0):
+                    raise NotImplementedError()
+                self.__due_finance_charge = self.__period_finance_charge
+                self.__period_finance_charge = money(0)
+            tomorrow = now + datetime.timedelta(days=1)
+            if self.__balance < money(0):
+                if now in self.__draw_term:
+                    interest_rate = self.__interest_rate.period_interest_rate(Period(now, tomorrow))
+                    finance_charge = money(interest_rate * -self.__balance)
+                    self.__period_finance_charge += finance_charge
+                elif now in self.__repayment_term:
+                    raise NotImplementedError()
+                else:
+                    raise NotImplementedError()
+            self.__last_update = tomorrow
+            now = tomorrow
+        assert self.__last_update == date
 
 def transfer(timeline, date, from_account, to_account, amount, description):
     from_account.withdraw(timeline=timeline, date=date, amount=amount, description=description)

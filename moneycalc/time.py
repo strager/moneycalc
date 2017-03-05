@@ -24,6 +24,9 @@ def diff_months(x, y):
         raise NotImplementedError()
     return months
 
+def days_in_year(year):
+    return (datetime.date(year=year + 1, month=1, day=1) - datetime.date(year=year, month=1, day=1)).days
+
 class Period(object):
     def __init__(self, start_date, end_date):
         assert start_date <= end_date
@@ -44,6 +47,10 @@ class Period(object):
         return (self.end_date - self.start_date).days
 
     @property
+    def is_day(self):
+        return self.days == 1
+
+    @property
     def is_month(self):
         return self.start_date.day == 1 and self.end_date.day == 1 and add_month(self.start_date) == self.end_date
 
@@ -59,6 +66,23 @@ class TestDateMath(unittest.TestCase):
         # TODO(strager)
         # with self.assertRaises(Exception):
         #    datetime.date(2017, 1, 30)
+
+    def test_days_in_year(self):
+        self.assertEqual(days_in_year(1600), 366)
+        self.assertEqual(days_in_year(1700), 365)
+        self.assertEqual(days_in_year(1800), 365)
+        self.assertEqual(days_in_year(1900), 365)
+        self.assertEqual(days_in_year(2000), 366)
+        self.assertEqual(days_in_year(2001), 365)
+        self.assertEqual(days_in_year(2002), 365)
+        self.assertEqual(days_in_year(2003), 365)
+        self.assertEqual(days_in_year(2004), 366)
+        self.assertEqual(days_in_year(2005), 365)
+        self.assertEqual(days_in_year(2006), 365)
+        self.assertEqual(days_in_year(2007), 365)
+        self.assertEqual(days_in_year(2008), 366)
+        self.assertEqual(days_in_year(2009), 365)
+        self.assertEqual(days_in_year(2010), 365)
 
 class TestPeriod(unittest.TestCase):
     def test_intersects(self):
