@@ -164,6 +164,10 @@ class CheckingAccount(Account):
         self.__balance = money(0)
         self.__last_update = None
 
+    @property
+    def balance(self):
+        return self.__balance
+
     def deposit(self, timeline, date, amount, description):
         assert amount >= 0
         assert amount == money(amount)
@@ -226,7 +230,9 @@ class LineOfCreditAccount(Account):
         assert amount == money(amount)
         assert self.__last_update is None or date >= self.__last_update
         if date not in self.__draw_term:
-            raise OverdraftError()
+            # TODO(strager)
+            #raise OverdraftError()
+            pass
         self.__update_finance_charge(date)
         timeline.add_withdrawl(date=date, account=self, amount=amount, description=description)
         self.__balance = money(self.__balance - amount)
