@@ -11,7 +11,7 @@ class Timeline(object):
 
         def __str__(self):
             return '{date}: {account} {amount:16} ({description})'.format(
-                account=self.account,
+                account='N/A' if self.account is None else self.account,
                 amount=self.amount,
                 date=self.date,
                 description=self.description)
@@ -25,11 +25,14 @@ class Timeline(object):
     def add_event(self, event):
         self.__events.append(event)
 
-    def add_withheld_cash(self, date, account, amount, description):
-        self.add_event(Timeline.Event(date=date, account=account, amount=-amount, description=description, tax_effect=TaxEffect.CASH_WITHHELD))
+    def add_withheld_cash(self, date, amount, description):
+        self.add_event(Timeline.Event(date=date, account=None, amount=-amount, description=description, tax_effect=TaxEffect.CASH_WITHHELD))
 
-    def add_income(self, date, account, amount, description):
-        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description, tax_effect=TaxEffect.CASH_INCOME))
+    def add_income(self, date, amount, description):
+        self.add_event(Timeline.Event(date=date, account=None, amount=amount, description=description, tax_effect=TaxEffect.CASH_INCOME))
+
+    def add_tax_deduction(self, date, account, amount, description):
+        self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description, tax_effect=TaxEffect.DEDUCTIBLE))
 
     def add_generic_deposit(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description))

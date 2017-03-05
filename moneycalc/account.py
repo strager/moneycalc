@@ -130,25 +130,6 @@ class CheckingAccount(Account):
         self.__balance = money(self.__balance - amount)
         self.__last_update = date
 
-class Income(Account):
-    def __init__(self):
-        super(Income, self).__init__(name='Income')
-        self.__last_update = None
-
-    def earn_cash(self, timeline, to_account, date, gross_amount, net_amount, description):
-        assert gross_amount >= 0
-        assert gross_amount == money(gross_amount)
-        assert net_amount >= 0
-        assert net_amount == money(net_amount)
-        assert gross_amount >= net_amount
-        assert self.__last_update is None or date >= self.__last_update
-        timeline.add_income(date=date, account=self, amount=gross_amount, description='{} (net)'.format(description))
-        withheld_amount = gross_amount - net_amount
-        if withheld_amount > 0:
-            timeline.add_withheld_cash(date=date, account=self, amount=withheld_amount, description='{} (withholding)'.format(description))
-        to_account.deposit(timeline=timeline, date=date, amount=net_amount, description=description)
-        self.__last_update = date
-
 def transfer(timeline, date, from_account, to_account, amount, description):
     from_account.withdraw(timeline=timeline, date=date, amount=amount, description=description)
     to_account.deposit(timeline=timeline, date=date, amount=amount, description=description)
