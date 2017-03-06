@@ -12,11 +12,7 @@ import moneycalc.util
 import sys
 
 def iter_salary_funcs(timeline, start_date, to_account):
-    def salary_func(date):
-        base_salary_income = money('7135.87')
-        bonus_income = money(0) # TODO(strager)
-        gross_income = base_salary_income + bonus_income
-
+    def receive_income(date, gross_income):
         withheld_401k = money(0) # TODO(strager)
         taxable_income = gross_income - withheld_401k
         withheld_us_income_tax = money(taxable_income * Decimal(0.215)) # FIXME(strager)
@@ -30,10 +26,25 @@ def iter_salary_funcs(timeline, start_date, to_account):
         timeline.add_income(date=date, amount=taxable_income, description='Salary (taxable)')
         to_account.deposit(timeline=timeline, date=date, amount=net_income, description='Salary (net)')
 
-    now = start_date
-    while True:
-        yield (now, salary_func)
-        now += datetime.timedelta(days=2 * 7)
+    def iter_base_salary_income_funcs():
+        now = start_date
+        while True:
+            yield (now, lambda date: receive_income(date, money('7135.87')))
+            now += datetime.timedelta(days=2 * 7)
+
+    def iter_bonus_income_funcs():
+        year = start_date.year
+        while True:
+            q1 = datetime.date(year=year, month=1, day=1)
+            q2 = datetime.date(year=year, month=4, day=1)
+            q3 = datetime.date(year=year, month=7, day=1)
+            q4 = datetime.date(year=year, month=10, day=1)
+            for now in [q1, q2, q3, q4]:
+                if now >= start_date:
+                    yield (now, lambda date: receive_income(date, money('10000.00')))
+            year += 1
+
+    return moneycalc.util.iter_merge_sort([iter_base_salary_income_funcs(), iter_bonus_income_funcs()], key=lambda (date, func): date)
 
 def iter_tax_payment_funcs(timeline, start_date, account):
     def tax_payment_func(date):
