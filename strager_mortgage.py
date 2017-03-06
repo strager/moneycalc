@@ -41,7 +41,7 @@ def iter_salary_funcs(timeline, start_date, to_account):
             q4 = datetime.date(year=year, month=10, day=1)
             for now in [q1, q2, q3, q4]:
                 if now >= start_date:
-                    yield (now, lambda date: receive_income(date, money('10000.00')))
+                    yield (now, lambda date: receive_income(date, money('50000.00')))
             year += 1
 
     return moneycalc.util.iter_merge_sort([iter_base_salary_income_funcs(), iter_bonus_income_funcs()], key=lambda (date, func): date)
@@ -61,6 +61,25 @@ def iter_tax_payment_funcs(timeline, start_date, account):
         yield (datetime.date(year=year, month=4, day=1), tax_payment_func)
         year += 1
 
+def iter_expenses_funcs(timeline, start_date, account):
+    def iter_misc_expenses_funcs():
+        def expenses_func(date):
+            account.withdraw(timeline=timeline, date=date, amount=money('1873.61'), description='Expenses')
+        now = datetime.date(year=start_date.year, month=start_date.month, day=15)
+        while True:
+            yield (now, expenses_func)
+            now = moneycalc.time.add_month(now)
+
+    def iter_auto_funcs():
+        def auto_func(date):
+            account.withdraw(timeline=timeline, date=date, amount=money('2225.70'), description='Auto')
+        now = datetime.date(year=start_date.year, month=start_date.month, day=19)
+        while True:
+            yield (now, auto_func)
+            now = moneycalc.time.add_month(now)
+
+    return moneycalc.util.iter_merge_sort([iter_misc_expenses_funcs(), iter_auto_funcs()], key=lambda (date, func): date)
+
 class Scenario(object):
     def __init__(self):
         # timeline should not be used outside play.
@@ -78,8 +97,9 @@ class Scenario(object):
         home_purchase_funcs = [(home_purchase_date, lambda date: self.purchase_home(date, home_purchase_amount))]
         tax_payment_funcs = iter_tax_payment_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account)
         salary_funcs = iter_salary_funcs(timeline=self.timeline, start_date=start_date, to_account=self.primary_account)
+        expenses_funcs = iter_expenses_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account)
         activity_funcs = self.iter_activity_funcs()
-        for (date, func) in moneycalc.util.iter_merge_sort([year_summary_funcs, home_purchase_funcs, tax_payment_funcs, salary_funcs, activity_funcs], key=lambda (date, func): date):
+        for (date, func) in moneycalc.util.iter_merge_sort([year_summary_funcs, home_purchase_funcs, tax_payment_funcs, salary_funcs, expenses_funcs, activity_funcs], key=lambda (date, func): date):
             if date > end_date:
                 break
             func(date)
