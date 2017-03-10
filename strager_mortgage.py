@@ -29,19 +29,17 @@ def iter_salary_funcs(timeline, start_date, to_account):
     def iter_base_salary_income_funcs():
         now = start_date
         while True:
-            yield (now, lambda date: receive_income(date, money('7135.87')))
+            yield (now, lambda date: receive_income(date, money('7553.31')))
             now += datetime.timedelta(days=2 * 7)
 
     def iter_bonus_income_funcs():
         year = start_date.year
         while True:
             q1 = datetime.date(year=year, month=1, day=1)
-            q2 = datetime.date(year=year, month=4, day=1)
             q3 = datetime.date(year=year, month=7, day=1)
-            q4 = datetime.date(year=year, month=10, day=1)
-            for now in [q1, q2, q3, q4]:
+            for now in [q1, q3]:
                 if now >= start_date:
-                    yield (now, lambda date: receive_income(date, money('50000.00')))
+                    yield (now, lambda date: receive_income(date, money('14728.95')))
             year += 1
 
     return moneycalc.util.iter_merge_sort([iter_base_salary_income_funcs(), iter_bonus_income_funcs()], key=lambda (date, func): date)
