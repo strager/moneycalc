@@ -10,6 +10,7 @@ import moneycalc.time
 import moneycalc.timeline
 import moneycalc.util
 import sys
+import traceback
 
 def iter_salary_funcs(timeline, start_date, to_account):
     def receive_income(date, gross_income):
@@ -100,7 +101,11 @@ class Scenario(object):
         for (date, func) in moneycalc.util.iter_merge_sort([year_summary_funcs, home_purchase_funcs, tax_payment_funcs, salary_funcs, expenses_funcs, activity_funcs], key=lambda (date, func): date):
             if date > end_date:
                 break
-            func(date)
+            try:
+                func(date)
+            except NotImplementedError:
+                traceback.print_exc()
+                break
 
         print_timeline = False
         if print_timeline:
