@@ -4,6 +4,7 @@ from decimal import Decimal
 from moneycalc.money import money
 from moneycalc.tax import TaxEffect
 import abc
+import collections
 import datetime
 import moneycalc.account
 import moneycalc.tax
@@ -167,13 +168,20 @@ class Scenario(object):
             events = [e for e in timeline if e.date.year == year]
             for account in self.all_accounts:
                 account_events = [e for e in events if e.account is account]
-                sys.stdout.write('  {account}: {balance} balance ({deposited} deposited, {withdrawn} withdrawn, {interest} interest)\n'.format(
+                sys.stdout.write('  {account}: {balance} balance ({deposited} deposited, {withdrawn} withdrawn)\n'.format(
                     account=account,
                     balance=account.balance,
                     deposited=sum(e.amount for e in account_events if e.amount > 0),
-                    interest=sum(e.amount for e in account_events if 'interest' in e.description), # HACK(strager)
                     withdrawn=sum(e.amount for e in account_events if e.amount < 0),
                 ))
+                grouped_events = collections.defaultdict(list)
+                for event in account_events:
+                    grouped_events[event.description].append(event)
+                for (description, event_group) in grouped_events.iteritems():
+                    sys.stdout.write('    {description}: {amount}\n'.format(
+                        amount=sum(e.amount for e in event_group),
+                        description=description,
+                    ))
         year = start_date.year
         while True:
             yield (datetime.date(year=year, month=1, day=1), year_summary_func)
