@@ -84,11 +84,17 @@ def iter_expenses_funcs(timeline, start_date, account):
             now = moneycalc.time.add_month(now)
 
     def iter_auto_funcs():
+        # TODO(strager): Model as a loan.
         def auto_func(date):
             account.withdraw(timeline=timeline, date=date, amount=money('2225.70'), description='Auto')
+        period = moneycalc.time.Period(
+            datetime.date(year=2016, month=7, day=19),
+            datetime.date(year=2021, month=7, day=19),
+        )
         now = datetime.date(year=start_date.year, month=start_date.month, day=19)
-        while True:
-            yield (now, auto_func)
+        while now <= period.end_date:
+            if now in period:
+                yield (now, auto_func)
             now = moneycalc.time.add_month(now)
 
     return moneycalc.util.iter_merge_sort([iter_misc_expenses_funcs(), iter_auto_funcs()], key=lambda (date, func): date)
