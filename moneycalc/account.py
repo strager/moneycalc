@@ -1,5 +1,6 @@
 from decimal import Decimal
 from moneycalc.money import money
+from moneycalc.tax import TaxEffect
 from moneycalc.time import Period
 from moneycalc.time import add_month
 from moneycalc.time import sub_month
@@ -176,13 +177,13 @@ class CheckingAccount(Account):
         self.__balance = money(self.__balance + amount)
         self.__last_update = date
 
-    def withdraw(self, timeline, date, amount, description):
+    def withdraw(self, timeline, date, amount, description, tax_effect=TaxEffect.NONE):
         assert amount >= 0
         assert amount == money(amount)
         assert self.__last_update is None or date >= self.__last_update
         if amount > self.__balance:
-            raise NotImplementedError()
-        timeline.add_withdrawl(date=date, account=self, amount=amount, description=description)
+            raise OverdraftError()
+        timeline.add_withdrawl(date=date, account=self, amount=amount, description=description, tax_effect=tax_effect)
         self.__balance = money(self.__balance - amount)
         self.__last_update = date
 
@@ -225,7 +226,7 @@ class LineOfCreditAccount(Account):
         self.__balance = money(self.__balance + principal_amount)
         self.__last_update = date
 
-    def withdraw(self, timeline, date, amount, description):
+    def withdraw(self, timeline, date, amount, description, tax_effect=TaxEffect.NONE):
         assert amount >= 0
         assert amount == money(amount)
         assert self.__last_update is None or date >= self.__last_update
@@ -234,7 +235,7 @@ class LineOfCreditAccount(Account):
             #raise OverdraftError()
             pass
         self.__update_finance_charge(date)
-        timeline.add_withdrawl(date=date, account=self, amount=amount, description=description)
+        timeline.add_withdrawl(date=date, account=self, amount=amount, description=description, tax_effect=tax_effect)
         self.__balance = money(self.__balance - amount)
         self.__last_update = date
 

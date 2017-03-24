@@ -48,7 +48,7 @@ def ca_tax_rate(year, amount):
 def tax_due(events, year):
     taxable_cash_income = sum(event.amount for event in events if event.tax_effect == TaxEffect.CASH_INCOME)
     withheld_cash = sum(-event.amount for event in events if event.tax_effect == TaxEffect.CASH_WITHHELD)
-    deductible = sum(event.amount for event in events if event.tax_effect == TaxEffect.DEDUCTIBLE)
+    deductible = sum(abs(event.amount) for event in events if event.tax_effect == TaxEffect.DEDUCTIBLE)
     tax_rate = us_tax_rate(year=year, amount=taxable_cash_income) + ca_tax_rate(year=year, amount=taxable_cash_income)
     taxable_income = max((taxable_cash_income - deductible, money(0)))
     total_due = money(taxable_income * tax_rate)

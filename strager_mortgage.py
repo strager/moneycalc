@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from moneycalc.money import money
+from moneycalc.tax import TaxEffect
 import abc
 import datetime
 import moneycalc.account
@@ -66,7 +67,7 @@ def iter_tax_payment_funcs(timeline, start_date, account):
             # TODO(strager): Treat as income.
             account.deposit(timeline=timeline, date=date, amount=-due, description='Tax refund')
         else:
-            account.withdraw(timeline=timeline, date=date, amount=due, description='Taxes')
+            account.withdraw(timeline=timeline, date=date, amount=due, description='Taxes', tax_effect=TaxEffect.DEDUCTIBLE)
     year = start_date.year
     while True:
         yield (datetime.date(year=year, month=4, day=1), tax_payment_func)
@@ -91,6 +92,31 @@ def iter_expenses_funcs(timeline, start_date, account):
 
     return moneycalc.util.iter_merge_sort([iter_misc_expenses_funcs(), iter_auto_funcs()], key=lambda (date, func): date)
 
+def iter_property_expense_funcs(timeline, start_date, account, home_value):
+    def iter_tax_funcs():
+        year = start_date.year
+        tax_rate = Decimal('0.0074')
+        def tax_func(date):
+            amount = money(home_value * tax_rate / 2)
+            account.withdraw(timeline=timeline, date=date, amount=amount, description='Property tax', tax_effect=TaxEffect.DEDUCTIBLE)
+        while True:
+            h1 = datetime.date(year=year, month=4, day=10)
+            h2 = datetime.date(year=year, month=12, day=10)
+            for now in [h1, h2]:
+                if now >= start_date:
+                    yield (now, tax_func)
+            year += 1
+
+    def iter_insurance_funcs():
+        def insurance_func(date):
+            account.withdraw(timeline=timeline, date=date, amount=money('1000.00'), description='Home insurance')
+        now = datetime.date(year=start_date.year, month=start_date.month, day=1)
+        while True:
+            yield (now, insurance_func)
+            now = moneycalc.time.add_month(now)
+
+    return moneycalc.util.iter_merge_sort([iter_tax_funcs(), iter_insurance_funcs()], key=lambda (date, func): date)
+
 class Scenario(object):
     def __init__(self):
         # timeline should not be used outside play.
@@ -100,17 +126,22 @@ class Scenario(object):
         start_date = datetime.date(year=2017, month=1, day=1)
         end_date = datetime.date(year=2047, month=1, day=1)
         home_purchase_date = datetime.date(2017, 1, 1)
-        home_purchase_amount = money('975000.00')
+        home_purchase_amount = money('1200000.00')
+        home_loan_amount = money('975000.00')
+        home_appraisal_amount = home_purchase_amount
 
         self.timeline = moneycalc.timeline.Timeline()
 
-        year_summary_funcs = self.__iter_year_summary_funcs(timeline=self.timeline, start_date=start_date)
-        home_purchase_funcs = [(home_purchase_date, lambda date: self.purchase_home(date, home_purchase_amount))]
-        tax_payment_funcs = iter_tax_payment_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account)
-        salary_funcs = iter_salary_funcs(timeline=self.timeline, start_date=start_date, to_account=self.primary_account)
-        expenses_funcs = iter_expenses_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account)
-        activity_funcs = self.iter_activity_funcs()
-        for (date, func) in moneycalc.util.iter_merge_sort([year_summary_funcs, home_purchase_funcs, tax_payment_funcs, salary_funcs, expenses_funcs, activity_funcs], key=lambda (date, func): date):
+        funcs = [
+            self.__iter_year_summary_funcs(timeline=self.timeline, start_date=start_date),
+            [(home_purchase_date, lambda date: self.purchase_home(date, home_loan_amount))],
+            iter_tax_payment_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account),
+            iter_salary_funcs(timeline=self.timeline, start_date=start_date, to_account=self.primary_account),
+            iter_expenses_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account),
+            iter_property_expense_funcs(timeline=self.timeline, start_date=start_date, account=self.primary_account, home_value=home_appraisal_amount),
+            self.iter_activity_funcs(),
+        ]
+        for (date, func) in moneycalc.util.iter_merge_sort(funcs, key=lambda (date, func): date):
             if date > end_date:
                 break
             try:

@@ -43,5 +43,5 @@ class Timeline(object):
     def add_interest_deposit(self, date, account, amount, description):
         self.add_event(Timeline.Event(date=date, account=account, amount=amount, description=description, tax_effect=TaxEffect.DEDUCTIBLE))
 
-    def add_withdrawl(self, date, account, amount, description):
-        self.add_event(Timeline.Event(date=date, account=account, amount=-amount, description=description))
+    def add_withdrawl(self, date, account, amount, description, tax_effect=TaxEffect.NONE):
+        self.add_event(Timeline.Event(date=date, account=account, amount=-amount, description=description, tax_effect=tax_effect))
